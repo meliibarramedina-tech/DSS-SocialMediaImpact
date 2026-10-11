@@ -99,18 +99,44 @@
           <div class="chart-container" id="age-chart"></div>
           <p class="chart-note">El archivo no contiene fechas ni periodos. Esta visualización muestra diferencias entre edades en una muestra transversal, no cambios a lo largo del tiempo. El tamaño de cada grupo está disponible al pasar el cursor por los puntos.</p>
         </article>
+        <article class="panel chart-panel" aria-labelledby="scatter-chart-title">
+          <div class="section-heading">
+            <div>
+              <h3 id="scatter-chart-title">Uso diario y duración del sueño</h3>
+              <p>Relación entre dos variables numéricas por participante.</p>
+            </div>
+          </div>
+          <div class="chart-container" id="scatter-chart"></div>
+        </article>
+        <article class="panel chart-panel" aria-labelledby="usage-histogram-title">
+          <div class="section-heading">
+            <div>
+              <h3 id="usage-histogram-title">Distribución del uso diario</h3>
+              <p>Frecuencia de participantes por intervalo de uso.</p>
+            </div>
+          </div>
+          <div class="chart-container" id="usage-histogram"></div>
+        </article>
+        <article class="panel chart-panel" aria-labelledby="sleep-quality-chart-title">
+          <div class="section-heading">
+            <div>
+              <h3 id="sleep-quality-chart-title">Distribución de calidad del sueño</h3>
+              <p>Proporción de registros para cada puntuación observada.</p>
+            </div>
+          </div>
+          <div class="chart-container" id="sleep-quality-chart"></div>
+        </article>
       </div>
     </section>
 
-    <!-- La tabla se conectará al conjunto de datos en una etapa posterior. -->
     <section class="panel section-panel table-section" aria-labelledby="table-title">
       <div class="section-heading">
         <div>
-          <h2 id="table-title">Tabla de datos</h2>
-          <p>Contenedor reservado para los registros del conjunto de datos.</p>
+          <h2 id="table-title">Resumen por plataforma</h2>
+          <p>Participantes y promedios calculados a partir del CSV.</p>
         </div>
       </div>
-      <div class="placeholder table-placeholder" aria-hidden="true"></div>
+      <div class="table-container" id="platform-table"></div>
     </section>
 
     <footer>Dashboard académico · Indicadores basados en el archivo fuente</footer>

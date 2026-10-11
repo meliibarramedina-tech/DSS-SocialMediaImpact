@@ -74,6 +74,17 @@ function calculateMetrics(csvText) {
   const participantIds = new Set();
   const platformTotals = new Map();
   const ageTotals = new Map();
+  const sleepQualityCounts = new Map();
+  const usageValues = [];
+  const usageSleepPairs = [];
+
+  function addToGroup(groups, key, value) {
+    const group = groups.get(key) ?? { total: 0, count: 0 };
+    group.total += value;
+    group.count += 1;
+    groups.set(key, group);
+  }
+
   for (const record of records) {
     const participantId = record[columnIndexes.get("Student_ID")]?.trim();
     if (participantId) {
@@ -83,27 +94,36 @@ function calculateMetrics(csvText) {
     const rawUsage = record[columnIndexes.get("Daily_Usage_Hours")]?.trim() ?? "";
     const platform = record[columnIndexes.get("Primary_Platform")]?.trim();
     const rawAge = record[columnIndexes.get("Age")]?.trim() ?? "";
+    const rawSleep = record[columnIndexes.get("Sleep_Duration_Hours")]?.trim() ?? "";
+    const rawQuality = record[columnIndexes.get("Sleep_Quality_Score")]?.trim() ?? "";
     const usage = Number(rawUsage);
     const age = Number(rawAge);
-    if (!rawUsage || !platform || !rawAge || !Number.isFinite(usage) || !Number.isFinite(age)) {
-      continue;
+    const sleep = Number(rawSleep);
+    const quality = Number(rawQuality);
+
+    if (rawUsage && Number.isFinite(usage)) {
+      usageValues.push(usage);
+      if (platform) {
+        addToGroup(platformTotals, platform, usage);
+      }
+      if (rawAge && Number.isFinite(age)) {
+        addToGroup(ageTotals, age, usage);
+      }
+      if (rawSleep && Number.isFinite(sleep)) {
+        usageSleepPairs.push({ usage, sleep });
+      }
     }
 
-    function addToGroup(groups, key) {
-      const group = groups.get(key) ?? { total: 0, count: 0 };
-      group.total += usage;
-      group.count += 1;
-      groups.set(key, group);
+    if (rawQuality && Number.isFinite(quality)) {
+      sleepQualityCounts.set(quality, (sleepQualityCounts.get(quality) ?? 0) + 1);
     }
-
-    addToGroup(platformTotals, platform);
-    addToGroup(ageTotals, age);
   }
   if (participantIds.size === 0) {
     throw new Error("No se encontraron identificadores de participantes en el CSV.");
   }
-  if (platformTotals.size === 0 || ageTotals.size === 0) {
-    throw new Error("No hay registros válidos para construir las gráficas.");
+  if (platformTotals.size === 0 || ageTotals.size === 0 || usageSleepPairs.length === 0
+    || usageValues.length === 0 || sleepQualityCounts.size === 0) {
+    throw new Error("No hay suficientes registros válidos para construir todas las gráficas.");
   }
 
   function average(columnName) {
@@ -119,6 +139,38 @@ function calculateMetrics(csvText) {
     return values.reduce((total, value) => total + value, 0) / values.length;
   }
 
+  const platformRows = new Map();
+  const platformIndex = columnIndexes.get("Primary_Platform");
+  for (const record of records) {
+    const platform = record[platformIndex]?.trim();
+    if (!platform) {
+      continue;
+    }
+    const stats = platformRows.get(platform) ?? {
+      participants: 0,
+      usageCount: 0,
+      usageTotal: 0,
+      sleepCount: 0,
+      sleepTotal: 0,
+      qualityCount: 0,
+      qualityTotal: 0,
+    };
+    stats.participants += 1;
+    for (const [columnName, totalName, countName] of [
+      ["Daily_Usage_Hours", "usageTotal", "usageCount"],
+      ["Sleep_Duration_Hours", "sleepTotal", "sleepCount"],
+      ["Sleep_Quality_Score", "qualityTotal", "qualityCount"],
+    ]) {
+      const rawValue = record[columnIndexes.get(columnName)]?.trim() ?? "";
+      const value = Number(rawValue);
+      if (rawValue && Number.isFinite(value)) {
+        stats[totalName] += value;
+        stats[countName] += 1;
+      }
+    }
+    platformRows.set(platform, stats);
+  }
+
   return {
     participants: participantIds.size,
     averageUsage: average("Daily_Usage_Hours"),
@@ -130,6 +182,20 @@ function calculateMetrics(csvText) {
     usageByAge: [...ageTotals.entries()]
       .map(([label, group]) => ({ label, average: group.total / group.count, count: group.count }))
       .sort((left, right) => left.label - right.label),
+    usageSleepPairs,
+    usageValues,
+    sleepQualityCounts: [...sleepQualityCounts.entries()]
+      .map(([score, count]) => ({ score, count }))
+      .sort((left, right) => left.score - right.score),
+    platformSummary: [...platformRows.entries()]
+      .map(([platform, stats]) => ({
+        platform,
+        participants: stats.participants,
+        averageUsage: stats.usageCount ? stats.usageTotal / stats.usageCount : null,
+        averageSleep: stats.sleepCount ? stats.sleepTotal / stats.sleepCount : null,
+        averageSleepQuality: stats.qualityCount ? stats.qualityTotal / stats.qualityCount : null,
+      }))
+      .sort((left, right) => left.platform.localeCompare(right.platform, "es")),
   };
 }
 
@@ -330,6 +396,316 @@ function renderAgeChart(data) {
   }
 }
 
+function renderUsageSleepScatter(data) {
+  const title = "Uso diario y duración del sueño";
+  const svg = createChartSvg(
+    document.querySelector("#scatter-chart"),
+    title,
+    `Diagrama de dispersión de ${integerFormat.format(data.length)} participantes. Eje horizontal: uso diario de redes en horas por día. Eje vertical: duración del sueño en horas por noche.`,
+  );
+  const left = 58;
+  const right = 468;
+  const top = 25;
+  const bottom = 270;
+  const maxUsage = Math.ceil(Math.max(...data.map((point) => point.usage)) / 2) * 2;
+  const maxSleep = Math.ceil(Math.max(...data.map((point) => point.sleep)) / 2) * 2;
+  const xMax = Math.max(2, maxUsage);
+  const yMax = Math.max(2, maxSleep);
+
+  for (let value = 0; value <= xMax; value += 2) {
+    const x = left + (value / xMax) * (right - left);
+    svg.append(createSvgElement("line", {
+      x1: x,
+      y1: top,
+      x2: x,
+      y2: bottom,
+      class: "chart-grid-line",
+    }));
+    addSvgText(svg, String(value), {
+      x,
+      y: bottom + 18,
+      "text-anchor": "middle",
+      class: "chart-tick-label",
+    });
+  }
+
+  for (let value = 0; value <= yMax; value += 2) {
+    const y = bottom - (value / yMax) * (bottom - top);
+    svg.append(createSvgElement("line", {
+      x1: left,
+      y1: y,
+      x2: right,
+      y2: y,
+      class: "chart-grid-line",
+    }));
+    addSvgText(svg, String(value), {
+      x: left - 10,
+      y: y + 4,
+      "text-anchor": "end",
+      class: "chart-tick-label",
+    });
+  }
+
+  svg.append(createSvgElement("line", {
+    x1: left,
+    y1: top,
+    x2: left,
+    y2: bottom,
+    class: "chart-axis-line",
+  }));
+  svg.append(createSvgElement("line", {
+    x1: left,
+    y1: bottom,
+    x2: right,
+    y2: bottom,
+    class: "chart-axis-line",
+  }));
+  addSvgText(svg, "Uso de redes (horas/día)", {
+    x: (left + right) / 2,
+    y: 342,
+    "text-anchor": "middle",
+    class: "chart-axis-label",
+  });
+  addSvgText(svg, "Sueño (horas/noche)", {
+    x: 16,
+    y: (top + bottom) / 2,
+    transform: `rotate(-90 16 ${(top + bottom) / 2})`,
+    "text-anchor": "middle",
+    class: "chart-axis-label",
+  });
+
+  for (const point of data) {
+    const circle = createSvgElement("circle", {
+      cx: left + (point.usage / xMax) * (right - left),
+      cy: bottom - (point.sleep / yMax) * (bottom - top),
+      r: 2.2,
+      fill: "#168b83",
+      "fill-opacity": 0.32,
+    });
+    const pointTitle = createSvgElement("title");
+    pointTitle.textContent =
+      `Uso: ${numberFormat.format(point.usage)} horas/día; sueño: ${numberFormat.format(point.sleep)} horas/noche`;
+    circle.append(pointTitle);
+    svg.append(circle);
+  }
+}
+
+function renderUsageHistogram(values) {
+  const title = "Distribución del uso diario";
+  const svg = createChartSvg(
+    document.querySelector("#usage-histogram"),
+    title,
+    "Histograma del número de participantes en intervalos de dos horas de uso diario de redes sociales.",
+  );
+  const binWidth = 2;
+  const maxValue = Math.max(binWidth, Math.ceil(Math.max(...values) / binWidth) * binWidth + binWidth);
+  const bins = Array.from({ length: maxValue / binWidth }, (_, index) => ({
+    start: index * binWidth,
+    end: (index + 1) * binWidth,
+    count: 0,
+  }));
+  for (const value of values) {
+    const binIndex = Math.min(Math.floor(value / binWidth), bins.length - 1);
+    bins[binIndex].count += 1;
+  }
+
+  const left = 58;
+  const right = 468;
+  const top = 25;
+  const bottom = 270;
+  const maximumCount = Math.max(...bins.map((bin) => bin.count));
+  const countStep = Math.max(1, Math.ceil(maximumCount / 4));
+  const axisMax = Math.ceil(maximumCount / countStep) * countStep;
+  for (let count = 0; count <= axisMax; count += countStep) {
+    const y = bottom - (count / axisMax) * (bottom - top);
+    svg.append(createSvgElement("line", {
+      x1: left,
+      y1: y,
+      x2: right,
+      y2: y,
+      class: "chart-grid-line",
+    }));
+    addSvgText(svg, integerFormat.format(count), {
+      x: left - 9,
+      y: y + 4,
+      "text-anchor": "end",
+      class: "chart-tick-label",
+    });
+  }
+  svg.append(createSvgElement("line", {
+    x1: left,
+    y1: top,
+    x2: left,
+    y2: bottom,
+    class: "chart-axis-line",
+  }));
+  svg.append(createSvgElement("line", {
+    x1: left,
+    y1: bottom,
+    x2: right,
+    y2: bottom,
+    class: "chart-axis-line",
+  }));
+  addSvgText(svg, "Uso de redes (horas/día)", {
+    x: (left + right) / 2,
+    y: 342,
+    "text-anchor": "middle",
+    class: "chart-axis-label",
+  });
+  addSvgText(svg, "Participantes", {
+    x: 16,
+    y: (top + bottom) / 2,
+    transform: `rotate(-90 16 ${(top + bottom) / 2})`,
+    "text-anchor": "middle",
+    class: "chart-axis-label",
+  });
+
+  const slotWidth = (right - left) / bins.length;
+  const barWidth = slotWidth - 2;
+  for (const [index, bin] of bins.entries()) {
+    const barHeight = (bin.count / axisMax) * (bottom - top);
+    const bar = createSvgElement("rect", {
+      x: left + index * slotWidth + 1,
+      y: bottom - barHeight,
+      width: barWidth,
+      height: barHeight,
+      fill: "#168b83",
+    });
+    const barTitle = createSvgElement("title");
+    barTitle.textContent = `${bin.start} a menos de ${bin.end} horas: ${integerFormat.format(bin.count)} participantes`;
+    bar.append(barTitle);
+    svg.append(bar);
+    addSvgText(svg, `${bin.start}–${bin.end}`, {
+      x: left + (index + 0.5) * slotWidth,
+      y: bottom + 18,
+      "text-anchor": "middle",
+      class: "chart-tick-label",
+    });
+  }
+}
+
+function renderSleepQualityChart(data) {
+  const title = "Distribución de calidad del sueño";
+  const container = document.querySelector("#sleep-quality-chart");
+  container.classList.add("donut-chart-layout");
+  const svg = createChartSvg(
+    container,
+    title,
+    "Gráfica de dona con la proporción de participantes para cada puntuación registrada en Sleep_Quality_Score.",
+  );
+  svg.setAttribute("viewBox", "0 0 320 350");
+  const colors = ["#315b78", "#168b83", "#70b9a9", "#e0a84f", "#cb765f"];
+  const total = data.reduce((sum, item) => sum + item.count, 0);
+  const centerX = 165;
+  const centerY = 175;
+  const outerRadius = 112;
+  const innerRadius = 67;
+  let startAngle = -Math.PI / 2;
+
+  function pointAt(radius, angle) {
+    return {
+      x: centerX + radius * Math.cos(angle),
+      y: centerY + radius * Math.sin(angle),
+    };
+  }
+
+  for (const [index, item] of data.entries()) {
+    const endAngle = startAngle + (item.count / total) * Math.PI * 2;
+    const outerStart = pointAt(outerRadius, startAngle);
+    const outerEnd = pointAt(outerRadius, endAngle);
+    const innerEnd = pointAt(innerRadius, endAngle);
+    const innerStart = pointAt(innerRadius, startAngle);
+    const largeArc = endAngle - startAngle > Math.PI ? 1 : 0;
+    const segment = createSvgElement("path", {
+      d: [
+        `M ${outerStart.x} ${outerStart.y}`,
+        `A ${outerRadius} ${outerRadius} 0 ${largeArc} 1 ${outerEnd.x} ${outerEnd.y}`,
+        `L ${innerEnd.x} ${innerEnd.y}`,
+        `A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${innerStart.x} ${innerStart.y}`,
+        "Z",
+      ].join(" "),
+      fill: colors[index % colors.length],
+    });
+    const segmentTitle = createSvgElement("title");
+    segmentTitle.textContent =
+      `Puntuación ${item.score}: ${integerFormat.format(item.count)} participantes (${numberFormat.format((item.count / total) * 100)}%)`;
+    segment.append(segmentTitle);
+    svg.append(segment);
+    startAngle = endAngle;
+  }
+
+  addSvgText(svg, integerFormat.format(total), {
+    x: centerX,
+    y: centerY - 2,
+    class: "donut-total",
+  });
+  addSvgText(svg, "participantes", {
+    x: centerX,
+    y: centerY + 17,
+    class: "donut-caption",
+  });
+
+  const legend = document.createElement("ul");
+  legend.className = "chart-legend";
+  for (const [index, item] of data.entries()) {
+    const entry = document.createElement("li");
+    const swatch = document.createElement("span");
+    swatch.className = "legend-swatch";
+    swatch.style.backgroundColor = colors[index % colors.length];
+    swatch.setAttribute("aria-hidden", "true");
+    const label = document.createElement("span");
+    label.textContent =
+      `Puntuación ${item.score}: ${integerFormat.format(item.count)} (${numberFormat.format((item.count / total) * 100)}%)`;
+    entry.append(swatch, label);
+    legend.append(entry);
+  }
+  container.append(legend);
+}
+
+function renderPlatformTable(data) {
+  const table = document.createElement("table");
+  table.className = "data-table";
+  const caption = document.createElement("caption");
+  caption.className = "sr-only";
+  caption.textContent = "Participantes y promedios de uso de redes y sueño por plataforma principal.";
+  const head = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  const headers = [
+    "Plataforma",
+    "Participantes",
+    "Uso (horas/día)",
+    "Sueño (horas/noche)",
+    "Calidad (puntos)",
+  ];
+  for (const text of headers) {
+    const cell = document.createElement("th");
+    cell.scope = "col";
+    cell.textContent = text;
+    headerRow.append(cell);
+  }
+  head.append(headerRow);
+
+  const body = document.createElement("tbody");
+  for (const item of data) {
+    const row = document.createElement("tr");
+    const values = [
+      item.platform,
+      integerFormat.format(item.participants),
+      item.averageUsage === null ? "—" : numberFormat.format(item.averageUsage),
+      item.averageSleep === null ? "—" : numberFormat.format(item.averageSleep),
+      item.averageSleepQuality === null ? "—" : numberFormat.format(item.averageSleepQuality),
+    ];
+    for (const value of values) {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      row.append(cell);
+    }
+    body.append(row);
+  }
+  table.append(caption, head, body);
+  document.querySelector("#platform-table").replaceChildren(table);
+}
+
 function renderMetrics(metrics) {
   document.querySelector("#participant-count").textContent = integerFormat.format(metrics.participants);
   document.querySelector("#average-usage").textContent = numberFormat.format(metrics.averageUsage);
@@ -340,6 +716,10 @@ function renderMetrics(metrics) {
   status.textContent = `Cálculo completado desde el archivo fuente: ${integerFormat.format(metrics.participants)} participantes.`;
   renderPlatformChart(metrics.usageByPlatform);
   renderAgeChart(metrics.usageByAge);
+  renderUsageSleepScatter(metrics.usageSleepPairs);
+  renderUsageHistogram(metrics.usageValues);
+  renderSleepQualityChart(metrics.sleepQualityCounts);
+  renderPlatformTable(metrics.platformSummary);
 }
 
 async function loadMetrics() {
