@@ -29,8 +29,40 @@
       </div>
     </section>
 
+    <section class="content-section" aria-labelledby="kpis-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="kpis-title">Indicadores clave</h2>
+          <p>Resumen descriptivo calculado directamente desde el conjunto de datos.</p>
+        </div>
+      </div>
+      <p class="data-status" id="kpi-status" role="status" aria-live="polite">Cargando datos del archivo fuente…</p>
+      <div class="kpi-grid" aria-label="Indicadores calculados">
+        <article class="panel kpi-card">
+          <h3>Participantes en la muestra</h3>
+          <p class="kpi-reading"><span class="kpi-value" id="participant-count">—</span><span class="kpi-unit">personas</span></p>
+          <p class="kpi-note">Cantidad de identificadores de estudiante únicos.</p>
+        </article>
+        <article class="panel kpi-card">
+          <h3>Uso diario de redes</h3>
+          <p class="kpi-reading"><span class="kpi-value" id="average-usage">—</span><span class="kpi-unit">horas/día</span></p>
+          <p class="kpi-note">Promedio de Daily_Usage_Hours en los registros disponibles.</p>
+        </article>
+        <article class="panel kpi-card">
+          <h3>Duración del sueño</h3>
+          <p class="kpi-reading"><span class="kpi-value" id="average-sleep">—</span><span class="kpi-unit">horas/noche</span></p>
+          <p class="kpi-note">Promedio de Sleep_Duration_Hours en los registros disponibles.</p>
+        </article>
+        <article class="panel kpi-card">
+          <h3>Calidad del sueño</h3>
+          <p class="kpi-reading"><span class="kpi-value" id="average-sleep-quality">—</span><span class="kpi-unit">puntos</span></p>
+          <p class="kpi-note">Promedio del campo Sleep_Quality_Score, sin interpretación adicional de la escala.</p>
+        </article>
+      </div>
+    </section>
+
     <!-- Los controles de filtrado se incorporarán en una etapa posterior. -->
-    <section class="panel section-panel" aria-labelledby="filters-title">
+    <section class="panel section-panel filter-section" aria-labelledby="filters-title">
       <div class="section-heading">
         <div>
           <h2 id="filters-title">Filtros</h2>
@@ -38,21 +70,6 @@
         </div>
       </div>
       <div class="placeholder filter-placeholder" aria-hidden="true"></div>
-    </section>
-
-    <!-- Aquí se definirán y calcularán los KPI cuando se acuerden en la siguiente etapa. -->
-    <section class="content-section" aria-labelledby="kpis-title">
-      <div class="section-heading">
-        <div>
-          <h2 id="kpis-title">Indicadores clave</h2>
-          <p>Los indicadores y sus valores se definirán posteriormente.</p>
-        </div>
-      </div>
-      <div class="placeholder-grid kpi-placeholder-grid" aria-label="Espacios reservados para KPI">
-        <div class="placeholder kpi-placeholder" aria-hidden="true"></div>
-        <div class="placeholder kpi-placeholder" aria-hidden="true"></div>
-        <div class="placeholder kpi-placeholder" aria-hidden="true"></div>
-      </div>
     </section>
 
     <!-- Las visualizaciones se seleccionarán e implementarán en una etapa posterior. -->
@@ -80,7 +97,8 @@
       <div class="placeholder table-placeholder" aria-hidden="true"></div>
     </section>
 
-    <footer>Dashboard académico · Estructura inicial</footer>
+    <footer>Dashboard académico · Indicadores basados en el archivo fuente</footer>
   </main>
+  <script src="app.js"></script>
 </body>
 </html>

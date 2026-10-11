@@ -161,12 +161,65 @@ code {
   gap: 14px;
 }
 
-.kpi-placeholder-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
 }
 
-.kpi-placeholder {
-  min-height: 105px;
+.kpi-card {
+  min-width: 0;
+  padding: 16px 17px 15px;
+}
+
+.kpi-card h3 {
+  margin: 0;
+  color: #66798a;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.kpi-reading {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: 13px 0 5px;
+}
+
+.kpi-value {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: clamp(22px, 2.4vw, 29px);
+  font-weight: 760;
+  letter-spacing: -.045em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kpi-unit {
+  color: #738596;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.kpi-note {
+  margin: 0;
+  color: #8a98a5;
+  font-size: 10px;
+}
+
+.data-status {
+  margin: -4px 0 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.data-status[data-state="error"] {
+  color: #a43c3c;
+}
+
+.filter-section {
+  margin-top: 23px;
 }
 
 .chart-placeholder-grid {
