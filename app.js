@@ -63,6 +63,8 @@ function calculateMetrics(csvText) {
     "Daily_Usage_Hours",
     "Sleep_Duration_Hours",
     "Sleep_Quality_Score",
+    "Primary_Platform",
+    "Age",
   ];
   const missingColumns = requiredColumns.filter((column) => !columnIndexes.has(column));
   if (missingColumns.length > 0) {
@@ -70,14 +72,38 @@ function calculateMetrics(csvText) {
   }
 
   const participantIds = new Set();
+  const platformTotals = new Map();
+  const ageTotals = new Map();
   for (const record of records) {
     const participantId = record[columnIndexes.get("Student_ID")]?.trim();
     if (participantId) {
       participantIds.add(participantId);
     }
+
+    const rawUsage = record[columnIndexes.get("Daily_Usage_Hours")]?.trim() ?? "";
+    const platform = record[columnIndexes.get("Primary_Platform")]?.trim();
+    const rawAge = record[columnIndexes.get("Age")]?.trim() ?? "";
+    const usage = Number(rawUsage);
+    const age = Number(rawAge);
+    if (!rawUsage || !platform || !rawAge || !Number.isFinite(usage) || !Number.isFinite(age)) {
+      continue;
+    }
+
+    function addToGroup(groups, key) {
+      const group = groups.get(key) ?? { total: 0, count: 0 };
+      group.total += usage;
+      group.count += 1;
+      groups.set(key, group);
+    }
+
+    addToGroup(platformTotals, platform);
+    addToGroup(ageTotals, age);
   }
   if (participantIds.size === 0) {
     throw new Error("No se encontraron identificadores de participantes en el CSV.");
+  }
+  if (platformTotals.size === 0 || ageTotals.size === 0) {
+    throw new Error("No hay registros válidos para construir las gráficas.");
   }
 
   function average(columnName) {
@@ -98,7 +124,210 @@ function calculateMetrics(csvText) {
     averageUsage: average("Daily_Usage_Hours"),
     averageSleep: average("Sleep_Duration_Hours"),
     averageSleepQuality: average("Sleep_Quality_Score"),
+    usageByPlatform: [...platformTotals.entries()]
+      .map(([label, group]) => ({ label, average: group.total / group.count, count: group.count }))
+      .sort((left, right) => left.label.localeCompare(right.label, "es")),
+    usageByAge: [...ageTotals.entries()]
+      .map(([label, group]) => ({ label, average: group.total / group.count, count: group.count }))
+      .sort((left, right) => left.label - right.label),
   };
+}
+
+function createSvgElement(name, attributes = {}) {
+  const element = document.createElementNS("http://www.w3.org/2000/svg", name);
+  for (const [attribute, value] of Object.entries(attributes)) {
+    element.setAttribute(attribute, String(value));
+  }
+  return element;
+}
+
+function addSvgText(svg, text, attributes = {}) {
+  const element = createSvgElement("text", attributes);
+  element.textContent = text;
+  svg.append(element);
+  return element;
+}
+
+function createChartSvg(container, title, description) {
+  const svg = createSvgElement("svg", {
+    viewBox: "0 0 480 350",
+    role: "img",
+    "aria-label": `${title}. ${description}`,
+  });
+  const titleElement = createSvgElement("title");
+  titleElement.textContent = title;
+  const descriptionElement = createSvgElement("desc");
+  descriptionElement.textContent = description;
+  svg.append(titleElement, descriptionElement);
+  container.replaceChildren(svg);
+  return svg;
+}
+
+function addChartAxes(svg, { left, right, top, bottom, maxValue, xLabel, yLabel }) {
+  const tickStep = 2;
+  for (let value = 0; value <= maxValue; value += tickStep) {
+    const y = bottom - (value / maxValue) * (bottom - top);
+    svg.append(createSvgElement("line", {
+      x1: left,
+      y1: y,
+      x2: right,
+      y2: y,
+      class: "chart-grid-line",
+    }));
+    addSvgText(svg, String(value), {
+      x: left - 10,
+      y: y + 4,
+      "text-anchor": "end",
+      class: "chart-tick-label",
+    });
+  }
+
+  svg.append(createSvgElement("line", {
+    x1: left,
+    y1: top,
+    x2: left,
+    y2: bottom,
+    class: "chart-axis-line",
+  }));
+  svg.append(createSvgElement("line", {
+    x1: left,
+    y1: bottom,
+    x2: right,
+    y2: bottom,
+    class: "chart-axis-line",
+  }));
+  addSvgText(svg, xLabel, {
+    x: (left + right) / 2,
+    y: 342,
+    "text-anchor": "middle",
+    class: "chart-axis-label",
+  });
+  addSvgText(svg, yLabel, {
+    x: 17,
+    y: (top + bottom) / 2,
+    transform: `rotate(-90 17 ${(top + bottom) / 2})`,
+    "text-anchor": "middle",
+    class: "chart-axis-label",
+  });
+}
+
+function renderPlatformChart(data) {
+  const title = "Uso diario promedio por plataforma";
+  const svg = createChartSvg(
+    document.querySelector("#platform-chart"),
+    title,
+    "Gráfica de barras del promedio de horas diarias de uso de redes sociales por plataforma principal.",
+  );
+  const left = 52;
+  const right = 468;
+  const top = 25;
+  const bottom = 265;
+  const maxValue = Math.max(8, Math.ceil(Math.max(...data.map((item) => item.average)) / 2) * 2);
+  addChartAxes(svg, {
+    left,
+    right,
+    top,
+    bottom,
+    maxValue,
+    xLabel: "Plataforma principal",
+    yLabel: "Uso promedio (horas/día)",
+  });
+
+  const slotWidth = (right - left) / data.length;
+  const barWidth = Math.min(48, slotWidth * 0.58);
+  for (const [index, item] of data.entries()) {
+    const x = left + slotWidth * index + (slotWidth - barWidth) / 2;
+    const barHeight = (item.average / maxValue) * (bottom - top);
+    const bar = createSvgElement("rect", {
+      x,
+      y: bottom - barHeight,
+      width: barWidth,
+      height: barHeight,
+      rx: 4,
+      fill: "#168b83",
+    });
+    const barTitle = createSvgElement("title");
+    barTitle.textContent =
+      `${item.label}: ${numberFormat.format(item.average)} horas/día (n=${integerFormat.format(item.count)})`;
+    bar.append(barTitle);
+    svg.append(bar);
+    addSvgText(svg, numberFormat.format(item.average), {
+      x: x + barWidth / 2,
+      y: bottom - barHeight - 7,
+      "text-anchor": "middle",
+      class: "chart-tick-label",
+    });
+    addSvgText(svg, item.label, {
+      x: x + barWidth / 2,
+      y: bottom + 18,
+      "text-anchor": "middle",
+      class: "chart-tick-label",
+    });
+  }
+}
+
+function renderAgeChart(data) {
+  const title = "Uso diario promedio por edad";
+  const svg = createChartSvg(
+    document.querySelector("#age-chart"),
+    title,
+    "Gráfica de líneas transversal del promedio de horas diarias de uso de redes sociales por edad, no por fecha.",
+  );
+  const left = 52;
+  const right = 468;
+  const top = 25;
+  const bottom = 265;
+  const maxValue = Math.max(8, Math.ceil(Math.max(...data.map((item) => item.average)) / 2) * 2);
+  addChartAxes(svg, {
+    left,
+    right,
+    top,
+    bottom,
+    maxValue,
+    xLabel: "Edad (años)",
+    yLabel: "Uso promedio (horas/día)",
+  });
+
+  const xFor = (index) => left + (data.length === 1 ? 0 : (index / (data.length - 1)) * (right - left));
+  const yFor = (value) => bottom - (value / maxValue) * (bottom - top);
+  const path = data.map((item, index) =>
+    `${index === 0 ? "M" : "L"} ${xFor(index)} ${yFor(item.average)}`,
+  ).join(" ");
+  svg.append(createSvgElement("path", {
+    d: path,
+    fill: "none",
+    stroke: "#2379e8",
+    "stroke-width": 3,
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+  }));
+
+  for (const [index, item] of data.entries()) {
+    const x = xFor(index);
+    const y = yFor(item.average);
+    const point = createSvgElement("circle", {
+      cx: x,
+      cy: y,
+      r: 4,
+      fill: "#2379e8",
+      stroke: "#ffffff",
+      "stroke-width": 2,
+    });
+    const pointTitle = createSvgElement("title");
+    pointTitle.textContent =
+      `${item.label} años: ${numberFormat.format(item.average)} horas/día (n=${integerFormat.format(item.count)})`;
+    point.append(pointTitle);
+    svg.append(point);
+
+    if (index === 0 || index === data.length - 1 || index % 2 === 0) {
+      addSvgText(svg, String(item.label), {
+        x,
+        y: bottom + 18,
+        "text-anchor": "middle",
+        class: "chart-tick-label",
+      });
+    }
+  }
 }
 
 function renderMetrics(metrics) {
@@ -109,6 +338,8 @@ function renderMetrics(metrics) {
 
   const status = document.querySelector("#kpi-status");
   status.textContent = `Cálculo completado desde el archivo fuente: ${integerFormat.format(metrics.participants)} participantes.`;
+  renderPlatformChart(metrics.usageByPlatform);
+  renderAgeChart(metrics.usageByAge);
 }
 
 async function loadMetrics() {

@@ -72,17 +72,33 @@
       <div class="placeholder filter-placeholder" aria-hidden="true"></div>
     </section>
 
-    <!-- Las visualizaciones se seleccionarán e implementarán en una etapa posterior. -->
     <section class="content-section" aria-labelledby="charts-title">
       <div class="section-heading">
         <div>
           <h2 id="charts-title">Gráficas</h2>
-          <p>Área reservada para las visualizaciones que se definirán más adelante.</p>
+          <p>Uso diario de redes sociales en la muestra disponible.</p>
         </div>
       </div>
-      <div class="placeholder-grid chart-placeholder-grid" aria-label="Espacios reservados para gráficas">
-        <div class="placeholder chart-placeholder" aria-hidden="true"></div>
-        <div class="placeholder chart-placeholder" aria-hidden="true"></div>
+      <div class="chart-grid">
+        <article class="panel chart-panel" aria-labelledby="platform-chart-title">
+          <div class="section-heading">
+            <div>
+              <h3 id="platform-chart-title">Uso diario promedio por plataforma</h3>
+              <p>Comparación entre plataformas principales.</p>
+            </div>
+          </div>
+          <div class="chart-container" id="platform-chart"></div>
+        </article>
+        <article class="panel chart-panel" aria-labelledby="age-chart-title">
+          <div class="section-heading">
+            <div>
+              <h3 id="age-chart-title">Uso diario promedio por edad</h3>
+              <p>Comparación por edad; no representa evolución temporal.</p>
+            </div>
+          </div>
+          <div class="chart-container" id="age-chart"></div>
+          <p class="chart-note">El archivo no contiene fechas ni periodos. Esta visualización muestra diferencias entre edades en una muestra transversal, no cambios a lo largo del tiempo. El tamaño de cada grupo está disponible al pasar el cursor por los puntos.</p>
+        </article>
       </div>
     </section>
 
