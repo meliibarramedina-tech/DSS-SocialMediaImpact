@@ -4,6 +4,9 @@ const numberFormat = new Intl.NumberFormat("es-MX", {
   maximumFractionDigits: 2,
 });
 const integerFormat = new Intl.NumberFormat("es-MX");
+const allLevelsValue = "__all__";
+const missingLevelValue = "__missing__";
+let sourceCsvText = "";
 
 function parseCsv(text) {
   const rows = [];
@@ -50,8 +53,8 @@ function parseCsv(text) {
   return rows;
 }
 
-function calculateMetrics(csvText) {
-  const [rawHeaders, ...records] = parseCsv(csvText);
+function calculateMetrics(csvText, selectedLevel = allLevelsValue) {
+  const [rawHeaders, ...allRecords] = parseCsv(csvText);
   if (!rawHeaders) {
     throw new Error("El archivo CSV está vacío.");
   }
@@ -65,11 +68,33 @@ function calculateMetrics(csvText) {
     "Sleep_Quality_Score",
     "Primary_Platform",
     "Age",
+    "Academic_Level",
   ];
   const missingColumns = requiredColumns.filter((column) => !columnIndexes.has(column));
   if (missingColumns.length > 0) {
     throw new Error(`Faltan columnas requeridas en el CSV: ${missingColumns.join(", ")}.`);
   }
+
+  const academicLevelIndex = columnIndexes.get("Academic_Level");
+  const academicLevelCounts = new Map();
+  for (const record of allRecords) {
+    const level = record[academicLevelIndex]?.trim() ?? "";
+    const key = level || missingLevelValue;
+    const group = academicLevelCounts.get(key) ?? { label: level || "Sin categoría (vacíos)", count: 0 };
+    group.count += 1;
+    academicLevelCounts.set(key, group);
+  }
+
+  const records = allRecords.filter((record) => {
+    const level = record[academicLevelIndex]?.trim() ?? "";
+    if (selectedLevel === allLevelsValue) {
+      return true;
+    }
+    if (selectedLevel === missingLevelValue) {
+      return level === "";
+    }
+    return level === selectedLevel;
+  });
 
   const participantIds = new Set();
   const platformTotals = new Map();
@@ -118,25 +143,32 @@ function calculateMetrics(csvText) {
       sleepQualityCounts.set(quality, (sleepQualityCounts.get(quality) ?? 0) + 1);
     }
   }
-  if (participantIds.size === 0) {
+  if (records.length > 0 && participantIds.size === 0) {
     throw new Error("No se encontraron identificadores de participantes en el CSV.");
   }
-  if (platformTotals.size === 0 || ageTotals.size === 0 || usageSleepPairs.length === 0
-    || usageValues.length === 0 || sleepQualityCounts.size === 0) {
+  if (records.length > 0 && (platformTotals.size === 0 || ageTotals.size === 0 || usageSleepPairs.length === 0
+    || usageValues.length === 0 || sleepQualityCounts.size === 0)) {
     throw new Error("No hay suficientes registros válidos para construir todas las gráficas.");
   }
 
   function average(columnName) {
     const columnIndex = columnIndexes.get(columnName);
-    const values = records
-      .map((record) => record[columnIndex]?.trim() ?? "")
-      .filter((value) => value !== "")
-      .map((value) => Number(value));
-
-    if (values.length === 0 || values.some((value) => !Number.isFinite(value))) {
-      throw new Error(`La columna ${columnName} no contiene valores numéricos válidos.`);
+    const values = [];
+    for (const record of records) {
+      const rawValue = record[columnIndex]?.trim() ?? "";
+      if (!rawValue) {
+        continue;
+      }
+      const value = Number(rawValue);
+      if (!Number.isFinite(value)) {
+        throw new Error(`La columna ${columnName} contiene un valor no numérico.`);
+      }
+      values.push(value);
     }
-    return values.reduce((total, value) => total + value, 0) / values.length;
+
+    return values.length > 0
+      ? values.reduce((total, value) => total + value, 0) / values.length
+      : null;
   }
 
   const platformRows = new Map();
@@ -176,6 +208,11 @@ function calculateMetrics(csvText) {
     averageUsage: average("Daily_Usage_Hours"),
     averageSleep: average("Sleep_Duration_Hours"),
     averageSleepQuality: average("Sleep_Quality_Score"),
+    selectedLevel,
+    matchingRecords: records.length,
+    totalRecords: allRecords.length,
+    academicLevels: [...academicLevelCounts.entries()]
+      .map(([value, group]) => ({ value, label: group.label, count: group.count })),
     usageByPlatform: [...platformTotals.entries()]
       .map(([label, group]) => ({ label, average: group.total / group.count, count: group.count }))
       .sort((left, right) => left.label.localeCompare(right.label, "es")),
@@ -277,7 +314,20 @@ function addChartAxes(svg, { left, right, top, bottom, maxValue, xLabel, yLabel 
   });
 }
 
+function renderEmptyChart(selector, message = "Sin registros para esta selección.") {
+  const container = document.querySelector(selector);
+  container.classList.remove("donut-chart-layout");
+  const messageElement = document.createElement("p");
+  messageElement.className = "empty-chart";
+  messageElement.textContent = message;
+  container.replaceChildren(messageElement);
+}
+
 function renderPlatformChart(data) {
+  if (data.length === 0) {
+    renderEmptyChart("#platform-chart");
+    return;
+  }
   const title = "Uso diario promedio por plataforma";
   const svg = createChartSvg(
     document.querySelector("#platform-chart"),
@@ -333,6 +383,10 @@ function renderPlatformChart(data) {
 }
 
 function renderAgeChart(data) {
+  if (data.length === 0) {
+    renderEmptyChart("#age-chart");
+    return;
+  }
   const title = "Uso diario promedio por edad";
   const svg = createChartSvg(
     document.querySelector("#age-chart"),
@@ -397,6 +451,10 @@ function renderAgeChart(data) {
 }
 
 function renderUsageSleepScatter(data) {
+  if (data.length === 0) {
+    renderEmptyChart("#scatter-chart");
+    return;
+  }
   const title = "Uso diario y duración del sueño";
   const svg = createChartSvg(
     document.querySelector("#scatter-chart"),
@@ -491,6 +549,10 @@ function renderUsageSleepScatter(data) {
 }
 
 function renderUsageHistogram(values) {
+  if (values.length === 0) {
+    renderEmptyChart("#usage-histogram");
+    return;
+  }
   const title = "Distribución del uso diario";
   const svg = createChartSvg(
     document.querySelector("#usage-histogram"),
@@ -585,6 +647,10 @@ function renderUsageHistogram(values) {
 }
 
 function renderSleepQualityChart(data) {
+  if (data.length === 0) {
+    renderEmptyChart("#sleep-quality-chart");
+    return;
+  }
   const title = "Distribución de calidad del sueño";
   const container = document.querySelector("#sleep-quality-chart");
   container.classList.add("donut-chart-layout");
@@ -663,6 +729,15 @@ function renderSleepQualityChart(data) {
 }
 
 function renderPlatformTable(data) {
+  const container = document.querySelector("#platform-table");
+  if (data.length === 0) {
+    const message = document.createElement("p");
+    message.className = "empty-table";
+    message.textContent = "Sin registros para esta selección.";
+    container.replaceChildren(message);
+    return;
+  }
+
   const table = document.createElement("table");
   table.className = "data-table";
   const caption = document.createElement("caption");
@@ -703,23 +778,90 @@ function renderPlatformTable(data) {
     body.append(row);
   }
   table.append(caption, head, body);
-  document.querySelector("#platform-table").replaceChildren(table);
+  container.replaceChildren(table);
 }
 
 function renderMetrics(metrics) {
   document.querySelector("#participant-count").textContent = integerFormat.format(metrics.participants);
-  document.querySelector("#average-usage").textContent = numberFormat.format(metrics.averageUsage);
-  document.querySelector("#average-sleep").textContent = numberFormat.format(metrics.averageSleep);
-  document.querySelector("#average-sleep-quality").textContent = numberFormat.format(metrics.averageSleepQuality);
+  document.querySelector("#average-usage").textContent =
+    metrics.averageUsage === null ? "—" : numberFormat.format(metrics.averageUsage);
+  document.querySelector("#average-sleep").textContent =
+    metrics.averageSleep === null ? "—" : numberFormat.format(metrics.averageSleep);
+  document.querySelector("#average-sleep-quality").textContent =
+    metrics.averageSleepQuality === null ? "—" : numberFormat.format(metrics.averageSleepQuality);
 
+  const filter = document.querySelector("#academic-level-filter");
+  const selectedOption = filter.selectedOptions[0];
+  const levelDescription = metrics.selectedLevel === allLevelsValue
+    ? "Todos los niveles"
+    : selectedOption?.textContent ?? "Nivel académico seleccionado";
   const status = document.querySelector("#kpi-status");
-  status.textContent = `Cálculo completado desde el archivo fuente: ${integerFormat.format(metrics.participants)} participantes.`;
+  const filterStatus = document.querySelector("#filter-status");
+  if (metrics.matchingRecords === 0) {
+    status.dataset.state = "empty";
+    status.textContent = "Sin registros para la selección actual. Elige otro nivel o muestra todos los datos.";
+    filterStatus.textContent = "La selección actual no contiene registros.";
+  } else {
+    delete status.dataset.state;
+    status.textContent = `${integerFormat.format(metrics.participants)} participantes · ${levelDescription}.`;
+    filterStatus.textContent = `${integerFormat.format(metrics.matchingRecords)} registros coincidentes.`;
+  }
+
   renderPlatformChart(metrics.usageByPlatform);
   renderAgeChart(metrics.usageByAge);
   renderUsageSleepScatter(metrics.usageSleepPairs);
   renderUsageHistogram(metrics.usageValues);
   renderSleepQualityChart(metrics.sleepQualityCounts);
   renderPlatformTable(metrics.platformSummary);
+}
+
+function populateAcademicLevelFilter(levels, totalRecords) {
+  const filter = document.querySelector("#academic-level-filter");
+  const allOption = filter.querySelector(`option[value="${allLevelsValue}"]`);
+  allOption.textContent = `Todos los niveles (${integerFormat.format(totalRecords)})`;
+
+  for (const level of levels) {
+    const option = document.createElement("option");
+    option.value = level.value;
+    option.textContent = `${level.label} (${integerFormat.format(level.count)})`;
+    filter.append(option);
+  }
+
+  filter.disabled = false;
+  document.querySelector("#reset-filters").disabled = false;
+}
+
+function showUpdateError(error) {
+  const message = `No se pudieron actualizar los datos: ${error.message}`;
+  for (const selector of ["#participant-count", "#average-usage", "#average-sleep", "#average-sleep-quality"]) {
+    document.querySelector(selector).textContent = "—";
+  }
+  const status = document.querySelector("#kpi-status");
+  status.dataset.state = "error";
+  status.textContent = message;
+  document.querySelector("#filter-status").textContent = "No fue posible aplicar el filtro.";
+  for (const selector of [
+    "#platform-chart",
+    "#age-chart",
+    "#scatter-chart",
+    "#usage-histogram",
+    "#sleep-quality-chart",
+  ]) {
+    renderEmptyChart(selector, "No se pudieron calcular los resultados.");
+  }
+  const tableMessage = document.createElement("p");
+  tableMessage.className = "empty-table";
+  tableMessage.textContent = "No se pudo calcular la tabla.";
+  document.querySelector("#platform-table").replaceChildren(tableMessage);
+}
+
+function updateSelectedLevel() {
+  const selectedLevel = document.querySelector("#academic-level-filter").value;
+  try {
+    renderMetrics(calculateMetrics(sourceCsvText, selectedLevel));
+  } catch (error) {
+    showUpdateError(error);
+  }
 }
 
 async function loadMetrics() {
@@ -729,11 +871,20 @@ async function loadMetrics() {
     if (!response.ok) {
       throw new Error(`No se pudo leer el archivo fuente (HTTP ${response.status}).`);
     }
-    const metrics = calculateMetrics(await response.text());
+    sourceCsvText = await response.text();
+    const metrics = calculateMetrics(sourceCsvText);
+    populateAcademicLevelFilter(metrics.academicLevels, metrics.totalRecords);
+    document.querySelector("#academic-level-filter").addEventListener("change", updateSelectedLevel);
+    document.querySelector("#reset-filters").addEventListener("click", () => {
+      const filter = document.querySelector("#academic-level-filter");
+      filter.value = allLevelsValue;
+      updateSelectedLevel();
+    });
     renderMetrics(metrics);
   } catch (error) {
     status.dataset.state = "error";
     status.textContent = `No se pudieron calcular los KPI: ${error.message} Abre el proyecto desde un servidor local y comprueba que el CSV esté en la misma carpeta.`;
+    document.querySelector("#filter-status").textContent = "No se pudieron cargar las opciones de filtro.";
   }
 }
 

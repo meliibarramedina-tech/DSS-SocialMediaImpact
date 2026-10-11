@@ -61,15 +61,22 @@
       </div>
     </section>
 
-    <!-- Los controles de filtrado se incorporarán en una etapa posterior. -->
     <section class="panel section-panel filter-section" aria-labelledby="filters-title">
       <div class="section-heading">
         <div>
           <h2 id="filters-title">Filtros</h2>
-          <p>Contenedor reservado para los controles de exploración.</p>
+          <p>La selección se aplica de forma uniforme a los indicadores, las gráficas y la tabla.</p>
         </div>
       </div>
-      <div class="placeholder filter-placeholder" aria-hidden="true"></div>
+      <div class="filter-controls">
+        <label class="filter-control" for="academic-level-filter">Nivel académico
+          <select id="academic-level-filter" disabled>
+            <option value="__all__">Todos los niveles</option>
+          </select>
+        </label>
+        <button class="filter-reset" id="reset-filters" type="button" disabled>Mostrar todos</button>
+        <p class="filter-status" id="filter-status" role="status" aria-live="polite">Cargando opciones de filtro…</p>
+      </div>
     </section>
 
     <section class="content-section" aria-labelledby="charts-title">
